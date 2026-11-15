@@ -1,0 +1,13 @@
+[Unit]
+Description=Clip Marker (stream markers web app)
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/clipping
+Environment=PORT=8095
+ExecStart=/usr/bin/node %h/projects/clipping/server.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

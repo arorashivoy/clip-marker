@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101214">
+<title>Clip Marker</title>
+<style>
+  :root {
+    --bg: #101214; --panel: #181b1f; --raised: #20242a; --line: #2c323a;
+    --text: #eef0f2; --muted: #8d96a1; --accent: #ffb020; --ok: #4ad295; --bad: #ff6b5e;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 16px/1.4 "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    min-height: 100dvh; display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) 16px calc(16px + env(safe-area-inset-bottom));
+    -webkit-tap-highlight-color: transparent;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  input, select {
+    background: var(--raised); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; min-width: 0; width: 100%;
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn {
+    background: var(--raised); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 14px; cursor: pointer; white-space: nowrap;
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #17130a; font-weight: 600; }
+  .btn.ghost { background: none; }
+  .btn.small { padding: 6px 10px; font-size: 14px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 0 12px; }
+  header h1 { font: 600 15px var(--mono); letter-spacing: .12em; text-transform: uppercase; margin: 0; flex: 1; }
+  header h1 span { color: var(--accent); }
+
+  .bar { display: grid; grid-template-columns: minmax(130px, 200px) 1fr auto; gap: 8px; }
+  @media (max-width: 620px) { .bar { grid-template-columns: 1fr auto; } .bar select { grid-column: 1 / -1; } }
+
+  .status { display: flex; align-items: center; gap: 8px; margin: 10px 0 14px; font-size: 14px; color: var(--muted); min-height: 22px; }
+  .status .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+  .status.live .dot { background: var(--bad); box-shadow: 0 0 0 4px rgba(255,107,94,.18); }
+  .status.live { color: var(--text); }
+  .status .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .status .clock { font: 600 15px var(--mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+
+  #pads { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); flex: 1; align-content: start; }
+  .pad {
+    position: relative; min-height: 104px; padding: 14px; text-align: left; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--line); border-bottom-width: 4px; border-radius: 12px;
+    font-size: 18px; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere;
+    display: flex; align-items: flex-end; touch-action: manipulation; user-select: none;
+    transition: transform .06s, border-color .2s, background .2s;
+  }
+  .pad:active, .pad.down { transform: translateY(3px); border-bottom-width: 1px; margin-bottom: 3px; }
+  .pad kbd {
+    position: absolute; top: 10px; right: 10px; font: 600 12px var(--mono); text-transform: uppercase;
+    color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 2px 7px; background: var(--bg);
+  }
+  .pad .note { position: absolute; top: 12px; left: 14px; font: 12px var(--mono); color: var(--muted); }
+  .pad .body { display: grid; gap: 4px; }
+  .pad .timer { font: 600 13px var(--mono); color: var(--bad); font-variant-numeric: tabular-nums; }
+  .pad .timer:empty { display: none; }
+  .pad.range { grid-column: span 2; border-color: var(--accent); }
+  .pad.range.open { border-color: var(--bad); background: #2a1917; }
+  .pad.add { border-style: dashed; border-bottom-width: 1px; background: none; color: var(--muted); font-size: 16px; align-items: center; justify-content: center; }
+  .pad.sent { border-color: var(--ok); background: #16261f; }
+  .pad.sent .note { color: var(--ok); }
+  .pad.failed { border-color: var(--bad); background: #2a1917; }
+  .pad.failed .note { color: var(--bad); }
+  .empty { color: var(--muted); padding: 24px 0; }
+
+  section.log { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .log h2, dialog h2 { font: 600 12px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  .log .head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  a { color: var(--accent); }
+  .log .links { font-size: 14px; display: flex; gap: 14px; }
+  .log ol { list-style: none; margin: 0; padding: 0; max-height: 230px; overflow-y: auto; font-size: 14px; }
+  .log li { display: grid; grid-template-columns: 70px 1fr auto; gap: 10px; align-items: center; padding: 3px 0; border-bottom: 1px solid var(--raised); }
+  .log time { font-family: var(--mono); color: var(--accent); }
+  .log .game { color: var(--muted); }
+
+  #toast {
+    position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
+    background: var(--bad); color: #1c0906; font-weight: 600; padding: 10px 16px; border-radius: 8px;
+    max-width: calc(100vw - 32px); opacity: 0; pointer-events: none; transition: .2s; z-index: 10;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #toast.good { background: var(--ok); color: #06180f; }
+
+  dialog {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px;
+    width: min(640px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 0;
+  }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  .sheet { padding: 18px; display: grid; gap: 22px; }
+  .sheet .top { display: flex; justify-content: space-between; align-items: center; }
+  .sheet .top strong { font-size: 18px; }
+  .sheet p { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
+  .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .row .grow { flex: 1; min-width: 0; }
+  .row label.range { flex: none; display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .row label.range input { width: auto; padding: 0; accent-color: var(--accent); }
+  .row input.key { width: 48px; flex: none; text-align: center; font-family: var(--mono); text-transform: uppercase; padding: 10px 4px; }
+  .gamebox { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+  .x { color: var(--bad); }
+  .past { font-size: 14px; }
+  .past .row { border-bottom: 1px solid var(--raised); padding-bottom: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Clip<span>/</span>Marker</h1>
+  <button class="btn small" id="openSettings">Settings</button>
+</header>
+
+<div class="bar">
+  <select id="game" aria-label="Game"></select>
+  <input id="url" placeholder="Link of the YouTube stream (optional)" inputmode="url" autocomplete="off" aria-label="Link of the stream">
+  <button class="btn primary" id="connect">Start</button>
+</div>
+<div class="status" id="status"><span class="dot"></span><span class="title"></span><span class="clock" id="clock"></span></div>
+
+<main id="pads"></main>
+
+<section class="log">
+  <div class="head">
+    <h2 id="logTitle">Markers of this session</h2>
+    <span class="links" id="links"></span>
+  </div>
+  <ol id="log"></ol>
+</section>
+
+<div id="toast" role="status"></div>
+
+<dialog id="settings">
+  <div class="sheet">
+    <div class="top"><strong>Settings</strong><button class="btn small" id="closeSettings">Close</button></div>
+
+    <div>
+      <h2>Games and buttons</h2>
+      <p>The name of the button is the category of the marker. The small box is the keyboard key. Use one letter or one digit.
+        A button with "Start/End" saves a start marker on the first press and an end marker on the second press, for example for a boss fight.</p>
+      <div id="games"></div>
+      <div class="row">
+        <button class="btn" id="addGame">Add a game</button>
+        <span class="grow"></span>
+        <button class="btn primary" id="saveGames">Save games</button>
+      </div>
+    </div>
+
+    <div>
+      <h2>Marker files of all sessions</h2>
+      <div class="past" id="sessions"></div>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="newButton">
+  <div class="sheet" style="gap:12px">
+    <div class="top"><strong id="newTitle">New button</strong><button class="btn small" id="newCancel">Cancel</button></div>
+    <p>The name is the category of the marker, for example Dodge. The small box is the keyboard key (optional).</p>
+    <div class="row">
+      <input class="key" id="newKey" maxlength="1" aria-label="Key">
+      <input class="grow" id="newLabel" placeholder="Name of the button" maxlength="60">
+      <label class="range"><input type="checkbox" id="newRange">Start/End</label>
+    </div>
+    <div class="row"><span class="grow"></span><button class="btn primary" id="newSave">Add the button</button></div>
+  </div>
+</dialog>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const newId = () => Math.random().toString(36).slice(2, 12);
+const clockText = (sec) => `${Math.floor(sec / 3600)}:${String(Math.floor(sec / 60) % 60).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+
+let state = { games: [], session: null, markers: [], sessions: [], open: {} };
+let draftGames = [];
+let gameId = localStorage.getItem('game') || '';
+
+async function api(method, path, body) {
+  const res = await fetch(path, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `The server returned HTTP ${res.status}`);
+  return json;
+}
+
+let toastTimer;
+function toast(text, good, ms = 3500) {
+  const el = $('#toast');
+  el.textContent = text;
+  el.className = 'show' + (good ? ' good' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, ms);
+}
+
+const currentGame = () => state.games.find((g) => g.id === gameId) || state.games[0];
+const fileLinks = (sessionId) => {
+  const q = `?session=${encodeURIComponent(sessionId)}`;
+  return `<a href="/markers.json${q}">JSON</a><a href="/markers.csv${q}">CSV</a>`;
+};
+
+function render() {
+  const game = currentGame();
+  const { session } = state;
+  $('#game').innerHTML = state.games.map((g) => `<option value="${esc(g.id)}"${g === game ? ' selected' : ''}>${esc(g.name)}</option>`).join('');
+  $('#pads').innerHTML = game && game.terms.length
+    ? game.terms.map((t) => `<button class="pad${t.range ? ' range' : ''}" data-term="${esc(t.id)}" data-label="${esc(t.label)}"><span class="note"></span>${t.key ? `<kbd>${esc(t.key)}</kbd>` : ''}<span class="body"><span class="timer"></span><span class="label">${esc(t.label)}</span></span></button>`).join('') + '<button class="pad add" id="addPad">+ Add a button</button>'
+    : game ? '<button class="pad add" id="addPad">+ Add a button</button>'
+    : '<p class="empty">There are no games. Open Settings and add a game.</p>';
+
+  $('#status').classList.toggle('live', Boolean(session));
+  $('#status .title').textContent = session
+    ? session.title + (session.startSource === 'connect' && session.videoId ? ' · clock from Start' : '')
+    : 'No session. Paste the stream link and select Start.';
+  $('#connect').textContent = session ? 'Stop' : 'Start';
+  $('#url').disabled = Boolean(session);
+  if (session) $('#url').value = session.videoId ? `https://youtu.be/${session.videoId}` : '';
+  const last = state.sessions[0];
+  $('#logTitle').textContent = session ? 'Markers of this session' : 'Marker file of the last session';
+  $('#links').innerHTML = session ? fileLinks(session.id) : last ? fileLinks(last.id) : '';
+  tick();
+  renderLog();
+}
+
+// A range button shows "Start" or "End", and the time since the start while the range is open.
+function paintRanges() {
+  for (const pad of document.querySelectorAll('.pad.range')) {
+    const open = state.open?.[pad.dataset.term];
+    pad.classList.toggle('open', Boolean(open));
+    pad.querySelector('.label').textContent = `${open ? 'End' : 'Start'}: ${pad.dataset.label}`;
+    pad.querySelector('.timer').textContent = open
+      ? `● ${clockText(Math.max(0, Math.round((Date.now() - Date.parse(open.at)) / 1000)))}` : '';
+  }
+}
+
+function tick() {
+  $('#clock').textContent = state.session
+    ? clockText(Math.max(0, Math.round((Date.now() - Date.parse(state.session.startTime)) / 1000))) : '';
+  paintRanges();
+}
+setInterval(tick, 1000);
+
+function renderLog() {
+  $('#log').innerHTML = state.markers.map((m) =>
+    `<li><time>${esc(m.offset)}</time><span>${esc(m.category)}${m.kind ? ` <strong>${m.kind}</strong>` : ''} <span class="game">· ${esc(m.game)}${m.kind === 'end' ? ` · ${clockText(m.durationSec || 0)} long` : ''}</span></span><button class="btn small ghost x" data-del="${esc(m.id)}" aria-label="Delete marker">✕</button></li>`).join('')
+    || `<li><span></span><span style="color:var(--muted)">${state.session ? 'No markers yet.' : state.sessions[0] ? `${state.sessions[0].count} markers. Download the file with the links above.` : 'No markers yet.'}</span><span></span></li>`;
+}
+
+async function load() {
+  state = await api('GET', '/api/state');
+  render();
+}
+
+// ---------- Save a marker ----------
+
+async function mark(termId) {
+  const game = currentGame();
+  const pad = document.querySelector(`.pad[data-term="${CSS.escape(termId)}"]`);
+  if (!game || !pad || pad.dataset.busy) return;
+  pad.dataset.busy = '1';
+  pad.classList.remove('sent', 'failed');
+  const note = pad.querySelector('.note');
+  navigator.vibrate?.(25);
+  try {
+    const marker = await api('POST', '/api/mark', { gameId: game.id, termId });
+    pad.classList.add('sent');
+    note.textContent = `saved · ${marker.offset}`;
+    state.markers.unshift(marker);
+    if (marker.kind === 'start') state.open[termId] = marker;
+    if (marker.kind === 'end') delete state.open[termId];
+    paintRanges();
+    renderLog();
+  } catch (e) {
+    pad.classList.add('failed');
+    note.textContent = 'not saved';
+    toast(e.message);
+  }
+  setTimeout(() => { pad.classList.remove('sent', 'failed'); note.textContent = ''; delete pad.dataset.busy; }, 1200);
+}
+
+$('#pads').addEventListener('click', (e) => {
+  const pad = e.target.closest('.pad');
+  if (pad?.classList.contains('add')) return openNewButton();
+  if (pad) mark(pad.dataset.term);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.closest('input, select, textarea, dialog')) return;
+  const hit = currentGame()?.terms.find((t) => t.key && t.key === e.key.toLowerCase());
+  if (!hit) return;
+  e.preventDefault();
+  const pad = document.querySelector(`.pad[data-term="${CSS.escape(hit.id)}"]`);
+  pad?.classList.add('down');
+  setTimeout(() => pad?.classList.remove('down'), 120);
+  mark(hit.id);
+});
+
+$('#log').addEventListener('click', async (e) => {
+  const id = e.target.dataset.del;
+  if (!id) return;
+  try {
+    await api('DELETE', `/api/mark?id=${encodeURIComponent(id)}`);
+    await load(); // the deletion of a start or an end marker changes the range buttons
+  } catch (err) { toast(err.message); }
+});
+
+$('#game').addEventListener('change', (e) => {
+  gameId = e.target.value;
+  localStorage.setItem('game', gameId);
+  e.target.blur(); // return the keyboard to the buttons
+  render();
+});
+
+$('#connect').addEventListener('click', async () => {
+  const button = $('#connect');
+  button.disabled = true;
+  try {
+    if (state.session) {
+      await api('DELETE', '/api/session');
+      $('#url').value = '';
+      toast('The session ended. Download the marker file below.', true, 6000);
+    } else {
+      const result = await api('POST', '/api/session', { url: $('#url').value });
+      if (result.warning) toast(result.warning, false, 8000);
+    }
+    await load();
+  } catch (e) { toast(e.message); }
+  button.disabled = false;
+  button.blur();
+});
+$('#url').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.target.blur(); $('#connect').click(); } });
+
+// ---------- Add a button from the main page ----------
+
+function openNewButton() {
+  const game = currentGame();
+  if (!game) return;
+  $('#newTitle').textContent = `New button for ${game.name}`;
+  $('#newLabel').value = '';
+  $('#newKey').value = '';
+  $('#newRange').checked = false;
+  $('#newButton').showModal();
+  $('#newLabel').focus();
+}
+
+async function saveNewButton() {
+  const label = $('#newLabel').value.trim();
+  const key = $('#newKey').value.trim().toLowerCase();
+  const range = $('#newRange').checked;
+  if (!label) return toast('Give the button a name.');
+  try {
+    await load(); // get the current games, because a different device can change them
+    const games = structuredClone(state.games);
+    const game = games.find((g) => g.id === currentGame()?.id);
+    if (!game) return toast('This game does not exist. Reload the page.');
+    const sameKey = key && game.terms.find((t) => t.key === key);
+    if (sameKey) return toast(`The key "${key.toUpperCase()}" is used by "${sameKey.label}".`);
+    game.terms.push({ id: newId(), label, key, ...(range ? { range: true } : {}) });
+    await api('PUT', '/api/games', { games });
+    await load();
+    $('#newButton').close();
+    toast(`The button "${label}" is added to ${game.name}.`, true);
+  } catch (e) { toast(e.message); }
+}
+
+$('#newCancel').addEventListener('click', () => $('#newButton').close());
+$('#newSave').addEventListener('click', saveNewButton);
+$('#newButton').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('#newLabel, #newKey')) { e.preventDefault(); saveNewButton(); } });
+
+// ---------- Settings ----------
+
+function renderGames() {
+  $('#games').innerHTML = draftGames.map((g, gi) => `
+    <div class="gamebox">
+      <div class="row">
+        <input class="grow" data-g="${gi}" data-f="name" value="${esc(g.name)}" placeholder="Name of the game" maxlength="40">
+        <button class="btn small ghost x" data-delgame="${gi}">Delete game</button>
+      </div>
+      ${g.terms.map((t, ti) => `
+        <div class="row">
+          <input class="key" data-g="${gi}" data-t="${ti}" data-f="key" value="${esc(t.key)}" maxlength="1" aria-label="Key">
+          <input class="grow" data-g="${gi}" data-t="${ti}" data-f="label" value="${esc(t.label)}" placeholder="Category, for example Good save" maxlength="60">
+          <label class="range"><input type="checkbox" data-g="${gi}" data-t="${ti}" data-f="range"${t.range ? ' checked' : ''}>Start/End</label>
+          <button class="btn small ghost x" data-delterm="${gi},${ti}" aria-label="Delete button">✕</button>
+        </div>`).join('')}
+      <button class="btn small" data-addterm="${gi}">Add a button</button>
+    </div>`).join('');
+}
+
+function renderSessions() {
+  $('#sessions').innerHTML = state.sessions.map((s) => `
+    <div class="row">
+      <span class="grow">${esc(new Date(s.first).toLocaleString())} · ${s.count} marker${s.count === 1 ? '' : 's'} · ${esc(s.games.join(', '))}</span>
+      <span class="links" style="display:flex;gap:12px">${fileLinks(s.id)}</span>
+    </div>`).join('') || '<p>No session has markers yet.</p>';
+}
+
+$('#openSettings').addEventListener('click', async () => {
+  await load().catch(() => {});
+  draftGames = structuredClone(state.games);
+  renderGames();
+  renderSessions();
+  $('#settings').showModal();
+});
+$('#closeSettings').addEventListener('click', () => $('#settings').close());
+
+$('#games').addEventListener('input', (e) => {
+  const { g, t, f } = e.target.dataset;
+  if (f === undefined) return;
+  if (t === undefined) draftGames[g][f] = e.target.value;
+  else if (f === 'range') draftGames[g].terms[t].range = e.target.checked;
+  else draftGames[g].terms[t][f] = f === 'key' ? e.target.value.toLowerCase() : e.target.value;
+});
+$('#games').addEventListener('click', (e) => {
+  const d = e.target.dataset;
+  if (d.addterm !== undefined) draftGames[d.addterm].terms.push({ id: newId(), label: '', key: '' });
+  else if (d.delterm !== undefined) { const [g, t] = d.delterm.split(','); draftGames[g].terms.splice(t, 1); }
+  else if (d.delgame !== undefined) draftGames.splice(d.delgame, 1);
+  else return;
+  renderGames();
+});
+$('#addGame').addEventListener('click', () => {
+  draftGames.push({ id: newId(), name: '', terms: [{ id: newId(), label: '', key: '' }] });
+  renderGames();
+});
+$('#saveGames').addEventListener('click', async () => {
+  for (const g of draftGames) {
+    const keys = g.terms.map((t) => t.key).filter(Boolean);
+    const twice = keys.find((k, i) => keys.indexOf(k) !== i);
+    if (twice) return toast(`The key "${twice.toUpperCase()}" is used two times in ${g.name || 'a game'}.`);
+  }
+  try {
+    await api('PUT', '/api/games', { games: draftGames });
+    await load();
+    draftGames = structuredClone(state.games);
+    renderGames();
+    toast('The games are saved.', true);
+  } catch (e) { toast(e.message); }
+});
+
+load().catch((e) => toast(e.message));
+
+// Get the open ranges and the markers again, because a different device can change them.
+setInterval(async () => {
+  if (document.hidden || $('#settings').open || $('#newButton').open || !state.session) return;
+  try {
+    const fresh = await api('GET', '/api/state');
+    state.open = fresh.open;
+    state.markers = fresh.markers;
+    paintRanges();
+    renderLog();
+  } catch { /* the next press shows the error */ }
+}, 10000);
+</script>
+</body>
+</html>
