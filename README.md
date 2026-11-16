@@ -105,8 +105,24 @@ files of all sessions. The JSON file has this structure:
 
 1. Wait until YouTube finishes the recording of the stream.
 2. Run `node clip.js <link of the stream>`. The clips go to the folder `clips`.
-3. Each range that has an end marker becomes one clip of the full range. To skip these clips, add `--no-ranges`.
-4. To change the length, use `--before 30` and `--after 15` (seconds). To see the commands only, add `--dry`.
+3. To change the length, use `--before 30` and `--after 15` (seconds). To see the commands only, add `--dry`.
+
+### Clips from the start and end buttons
+
+A start and end button, for example "Boss fight", gives one clip of the full event.
+
+1. During the stream, press the button at the start of the event and again at the end.
+2. After the stream, run `node clip.js <link of the stream> --dry`. Look for the lines with `full-` in the file name.
+3. Run the command again without `--dry` to cut the clips.
+
+- The clip starts `--before` seconds before the start marker and ends `--after` seconds after the end marker.
+  For a range from 0:49:50 to 1:03:28, the default clip is from 0:49:20 to 1:03:43.
+- The file name has `full-` and the name of the button, for example `<video ID>_00-49-20_full-Boss-fight.mp4`.
+- The markers of the other buttons in the range, for example "Close call", become their own short clips as usual.
+- To cut only the short clips, add `--no-ranges`.
+- A range with no end marker gives no clip. The tool prints a message and continues.
+- To cut the clips in a different tool, read `ranges` in the JSON file. Cut from `startSec` to `endSec`.
+  For a local recording, use `startAt` and `endAt`.
 
 ## Limits
 
