@@ -25,7 +25,8 @@ no Google account. A different tool can read the marker file later and cut the c
 3. Press a button on the screen, or press the key that the button shows.
 4. To add a button to the game, select "+ Add a button" after the last button. Give the name and the key.
 5. If a press was a mistake, delete the marker in the list.
-6. Select Stop when the stream ends. Then download the marker file with the JSON or CSV link.
+6. To change the buttons of a game, open Settings and select the name of the game. Its buttons open below it.
+7. Select Stop when the stream ends. Then download the marker file with the JSON or CSV link.
 
 The app reads the start time of the stream from the public YouTube page. If it cannot read the start time,
 or if you give no link, the clock starts when you select Start. A message tells you when this occurs.
@@ -42,6 +43,46 @@ Each game has one range button, for example "Boss fight" for Elden Ring. The key
 - If you delete the end marker in the list, the range is open again. If you delete the start marker, the app
   also deletes the end marker.
 - To make a different button a range button, open Settings and select "Start/End" on the row of the button.
+
+## Voice commands
+
+The speech engine (Vosk, small model for Indian English) runs in the browser. It is not an LLM, and it sends
+no audio to a server. The browser gives the microphone only to an HTTPS page, so open the app through the
+Cloudflare address, not through `http://<address of the Pi>:8095`.
+
+1. Select "Voice: off" at the top of the page and allow the microphone. The first load of the model (37 MB)
+   can take one minute.
+2. Say "mark" and the name of a button, for example "mark parry". The app saves the marker and gives a beep.
+3. For a start and end button, say "start boss fight" and "end boss fight".
+4. Select "Voice: on" to stop the microphone.
+
+- The name of a button alone, for example "parry", does nothing.
+- The engine hears only the buttons of the selected game. A new button works immediately.
+- The marker gets the time of the first word of the command, not the time of the result.
+- A reload of the page sets Voice to off. On a phone, keep the page on the screen.
+- Settings has the voice settings of this device:
+  - **Microphone:** select the headset. If it is not connected, the app uses the default microphone and tells you.
+    The names show after you allow the microphone one time.
+  - **First word:** "mark", "clip" or "save".
+  - **Minimum confidence:** if normal talk adds wrong markers, increase it. If the app misses commands, decrease it.
+  - **Fast detection** (on by default): the app acts when two partial results in a row agree on a command. It does
+    not wait for a pause, which helps with game audio. It skips the minimum confidence. It waits for the full name
+    when a name is the start of a different name, for example "close" and "close call".
+- The voice test (`/voice-test`, link in Settings) has the same settings and a level meter. When you speak, the
+  bar must reach the middle or more. When only the game plays, it must stay near the left.
+
+### Set up the microphone
+
+1. Use a headset microphone near the mouth. The distance to the laptop does not matter.
+2. Select the headset in the Voice settings, and check the level on the voice test.
+3. If the headset uses Bluetooth, connect it through its USB dongle or a cable. A Bluetooth headset that uses its
+   microphone changes to a low-quality phone mode.
+4. Play the game audio only in the headphones, not from the speakers.
+5. Make a short pause before and after each command.
+- Use common English words for a button name. The model ignores a word that it does not know.
+- `public/vendor/` holds the engine `vosk.js` (npm package `vosk-browser` 0.0.8) and `model-en-in.tar.gz`
+  (`vosk-model-small-en-in-0.4` from https://alphacephei.com/vosk/models, as a tar.gz archive). The folder is
+  not in git.
 
 The keys work only when the page has the focus and the cursor is not in a text box.
 

@@ -165,15 +165,17 @@ function stopSession() {
 
 const lastMark = new Map(); // button id -> time of the last press
 
-function mark(gameId, termId) {
-  const now = Date.now();
+// `agoMs` is the time since the action. A voice command gives it, because the speech engine needs a moment.
+function mark(gameId, termId, agoMs) {
+  const pressed = Date.now();
+  const now = pressed - Math.min(10_000, Math.max(0, Number(agoMs) || 0));
   const g = cfg.games.find((x) => x.id === gameId);
   const button = g?.terms.find((t) => t.id === termId);
   if (!button) throw new HttpError(404, 'This button does not exist. Reload the page.');
   const { session } = cfg;
   if (!session) throw new HttpError(400, 'Start a session first.');
-  if (now - (lastMark.get(termId) || 0) < COOLDOWN_MS) throw new HttpError(429, 'This button was saved a moment ago.');
-  lastMark.set(termId, now);
+  if (pressed - (lastMark.get(termId) || 0) < COOLDOWN_MS) throw new HttpError(429, 'This button was saved a moment ago.');
+  lastMark.set(termId, pressed);
 
   let marker;
   if (button.range) {
@@ -275,10 +277,23 @@ async function readJson(req) {
   try { return raw ? JSON.parse(raw) : {}; } catch { throw new HttpError(400, 'The request is not valid JSON.'); }
 }
 
+// The files of the voice commands and the voice test. The speech engine (Vosk) runs in the browser. The server only sends the files.
+const WEEK = 'public, max-age=604800';
+const STATIC = {
+  '/voice-test': { name: 'voice-test.html', type: 'text/html; charset=utf-8', cache: 'no-cache' },
+  '/favicon.svg': { name: 'favicon.svg', type: 'image/svg+xml', cache: WEEK },
+  '/favicon-32.png': { name: 'favicon-32.png', type: 'image/png', cache: WEEK },
+  '/favicon.ico': { name: 'favicon-32.png', type: 'image/png', cache: WEEK },
+  '/apple-touch-icon.png': { name: 'apple-touch-icon.png', type: 'image/png', cache: WEEK },
+  '/voice-shared.js': { name: 'voice-shared.js', type: 'text/javascript; charset=utf-8', cache: 'no-cache' },
+  '/vendor/vosk.js': { name: 'vendor/vosk.js', type: 'text/javascript; charset=utf-8', cache: WEEK },
+  '/vendor/model-en-in.tar.gz': { name: 'vendor/model-en-in.tar.gz', type: 'application/gzip', cache: WEEK },
+};
+
 async function route(req, url) {
   const key = `${req.method} ${url.pathname}`;
   if (key === 'GET /api/state') return publicState();
-  if (key === 'POST /api/mark') { const b = await readJson(req); return mark(b.gameId, b.termId); }
+  if (key === 'POST /api/mark') { const b = await readJson(req); return mark(b.gameId, b.termId, b.agoMs); }
   if (key === 'DELETE /api/mark') return removeMarker(url.searchParams.get('id'));
   if (key === 'POST /api/session') return startSession((await readJson(req)).url);
   if (key === 'DELETE /api/session') return stopSession();
@@ -297,6 +312,13 @@ http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
       return res.end(fs.readFileSync(path.join(__dirname, 'public', 'index.html')));
+    }
+    const file = req.method === 'GET' && STATIC[url.pathname];
+    if (file) {
+      const full = path.join(__dirname, 'public', file.name);
+      if (!fs.existsSync(full)) throw new HttpError(404, `The file ${file.name} is not on the server.`);
+      res.writeHead(200, { 'Content-Type': file.type, 'Content-Length': fs.statSync(full).size, 'Cache-Control': file.cache });
+      return fs.createReadStream(full).pipe(res);
     }
     const sessionId = url.searchParams.get('session') || '';
     const safeName = sessionId.replace(/[^\w-]/g, '') || 'all';

@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101214">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>Voice test · Clip Marker</title>
+<style>
+  :root {
+    --bg: #101214; --panel: #181b1f; --raised: #20242a; --line: #2c323a;
+    --text: #eef0f2; --muted: #8d96a1; --accent: #ffb020; --ok: #4ad295; --bad: #ff6b5e;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 16px/1.45 "Avenir Next", "Segoe UI", system-ui, sans-serif; max-width: 760px; margin: 0 auto;
+    padding: env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  h1 { font: 600 15px var(--mono); letter-spacing: .12em; text-transform: uppercase; margin: 16px 0 4px; }
+  h1 span { color: var(--accent); }
+  h2 { font: 600 12px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 22px 0 8px; }
+  p { margin: 0 0 10px; color: var(--muted); font-size: 14px; }
+  a { color: var(--accent); }
+  button, select, input { font: inherit; color: inherit; }
+  select, input { background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .btn { background: var(--accent); border: 1px solid var(--accent); color: #17130a; font-weight: 600; border-radius: 8px; padding: 10px 16px; cursor: pointer; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .bar select { flex: 1; min-width: 140px; }
+  .bar label { font-size: 14px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+  .bar input { width: 74px; }
+  #state { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font-size: 14px; }
+  #state.on { border-color: var(--ok); }
+  #state.bad { border-color: var(--bad); color: var(--bad); }
+  #heard { font: 15px var(--mono); min-height: 46px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); overflow-wrap: anywhere; }
+  #cmds { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .cmd { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel); display: flex; justify-content: space-between; gap: 8px; font-weight: 600; transition: background .3s, border-color .3s; }
+  .cmd .n { font: 600 14px var(--mono); color: var(--muted); }
+  .cmd.hit { border-color: var(--ok); }
+  .cmd.hit .n { color: var(--ok); }
+  .cmd.flash { background: #16261f; }
+  #log { list-style: none; margin: 0; padding: 0; font: 13px var(--mono); max-height: 260px; overflow-y: auto; }
+  #log li { padding: 4px 0; border-bottom: 1px solid var(--raised); display: grid; grid-template-columns: 76px 1fr auto; gap: 10px; }
+  #log .t { color: var(--muted); }
+  #log .ok { color: var(--ok); }
+  #log .no { color: var(--muted); }
+  #log .low { color: var(--bad); }
+  .total { font: 600 14px var(--mono); color: var(--accent); }
+  .bar select.mic { flex: 2; }
+  .meter { margin-top: 12px; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+  .meter .track { position: relative; height: 14px; border-radius: 7px; background: var(--raised); border: 1px solid var(--line); overflow: hidden; }
+  .meter .fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--ok); transition: width .06s linear; }
+  .meter .fill.loud { background: var(--accent); }
+  .meter .fill.clip { background: var(--bad); }
+  .meter .peak { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text); left: 0; }
+  .meter .db { font: 13px var(--mono); color: var(--muted); min-width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
+  #micName { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  #micName:empty { display: none; }
+</style>
+</head>
+<body>
+<h1>Clip<span>/</span>Marker · voice test</h1>
+<p><a href="/">Back to Clip Marker</a></p>
+<p>This page tests the voice commands. It saves no markers. The speech engine runs in this browser and sends no audio to a server.</p>
+
+<div class="bar">
+  <select id="game" aria-label="Game"></select>
+  <select class="mic" id="mic" aria-label="Microphone"></select>
+</div>
+<div class="bar" style="margin-top:8px">
+  <label>Minimum confidence <input id="conf" type="number" min="0" max="1" step="0.05" value="0.7"></label>
+  <label><input id="fast" type="checkbox" style="width:auto"> Fast detection</label>
+  <button class="btn" id="start">Start the test</button>
+</div>
+<div class="meter" aria-label="Microphone level">
+  <div class="track"><div class="fill" id="fill"></div><div class="peak" id="peak"></div></div>
+  <span class="db" id="db">— dB</span>
+</div>
+<div id="micName"></div>
+<p style="margin-top:8px">Check the level: when you speak, the bar must reach the middle or more. When only the game plays, it must stay near the left.</p>
+<div id="state">Select the game and select "Start the test". Allow the microphone when the browser asks.</div>
+
+<h2>What the engine hears</h2>
+<div id="heard">…</div>
+
+<h2>Commands of this game <span class="total" id="total"></span></h2>
+<div id="cmds"></div>
+
+<h2>Log</h2>
+<ol id="log"></ol>
+
+<script src="/vendor/vosk.js"></script>
+<script src="/voice-shared.js"></script>
+<script>
+const $ = (sel) => document.querySelector(sel);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const VS = window.VoiceShared;
+
+let games = [], commands = [], counts = {}, accepted = 0;
+let model = null, recognizer = null, audio = null, stream = null, source = null, node = null, analyser = null, running = false, t0 = 0;
+const track = VS.tracker(() => commands);
+
+function setState(text, cls) { $('#state').textContent = text; $('#state').className = cls || ''; }
+
+function buildCommands() {
+  const game = games.find((g) => g.id === $('#game').value) || games[0];
+  commands = VS.commandsOf(game);
+  counts = {};
+  accepted = 0;
+  $('#cmds').innerHTML = commands.slice().sort((a, b) => a.phrase.localeCompare(b.phrase))
+    .map((c) => `<div class="cmd" data-p="${esc(c.phrase)}"><span>“${esc(c.phrase)}”</span><span class="n">0</span></div>`).join('');
+  $('#total').textContent = '';
+}
+
+function log(text, note, cls) {
+  const li = document.createElement('li');
+  li.innerHTML = `<span class="t">${new Date().toLocaleTimeString([], { hour12: false })}</span><span class="${cls}">${esc(text)}</span><span class="${cls}">${esc(note)}</span>`;
+  $('#log').prepend(li);
+}
+
+function beep() {
+  navigator.vibrate?.(40);
+  if (!audio) return;
+  const osc = audio.createOscillator(), gain = audio.createGain();
+  osc.frequency.value = 880; gain.gain.value = 0.08;
+  osc.connect(gain).connect(audio.destination);
+  osc.start(); osc.stop(audio.currentTime + 0.09);
+}
+
+function count(hits) {
+  for (const h of hits) {
+    const timing = `${(h.agoMs / 1000).toFixed(1)} s after the start of the command`;
+    if (h.low) { log(h.cmd.phrase, `ignored · confidence ${h.conf.toFixed(2)}`, 'low'); continue; }
+    counts[h.cmd.phrase] = (counts[h.cmd.phrase] || 0) + 1;
+    accepted += 1;
+    const el = document.querySelector(`.cmd[data-p="${CSS.escape(h.cmd.phrase)}"]`);
+    if (el) {
+      el.classList.add('hit', 'flash');
+      el.querySelector('.n').textContent = counts[h.cmd.phrase];
+      setTimeout(() => el.classList.remove('flash'), 500);
+    }
+    $('#total').textContent = `· ${accepted} accepted`;
+    log(h.cmd.phrase, h.fast ? `fast · ${timing}` : `confidence ${h.conf.toFixed(2)} · ${timing}`, 'ok');
+    beep();
+  }
+}
+
+function newRecognizer() {
+  recognizer?.remove();
+  track.reset();
+  const grammar = JSON.stringify([...new Set(commands.map((c) => c.phrase)), '[unk]']);
+  recognizer = new model.KaldiRecognizer(audio.sampleRate, grammar);
+  recognizer.setWords(true);
+  recognizer.on('partialresult', (m) => {
+    const text = (m.result.partial || '').trim();
+    if (text) $('#heard').textContent = text;
+    count(track.partial(text));
+  });
+  recognizer.on('result', (m) => {
+    const text = (m.result.text || '').trim();
+    if (text) $('#heard').textContent = text;
+    const hits = track.final(text, m.result.result || [], t0);
+    count(hits);
+    if (!hits.length && text && text.split(' ').some((t) => t !== '[unk]') && !VS.findAll(text.split(' '), commands).length) log(text, 'no command', 'no');
+  });
+  t0 = 0;
+}
+
+// The level meter: the loudness of the microphone in dB, from -60 (silent) to 0 (the maximum).
+let peak = -60, peakAt = 0;
+function meter() {
+  if (!analyser) return;
+  const data = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(data);
+  let sum = 0;
+  for (const v of data) sum += v * v;
+  const db = Math.max(-60, 20 * Math.log10(Math.sqrt(sum / data.length) || 1e-6));
+  const now = performance.now();
+  if (db > peak || now - peakAt > 1500) { peak = db; peakAt = now; }
+  const pct = (d) => `${((d + 60) / 60) * 100}%`;
+  $('#fill').style.width = pct(db);
+  $('#fill').className = 'fill' + (db > -3 ? ' clip' : db > -12 ? ' loud' : '');
+  $('#peak').style.left = pct(peak);
+  $('#db').textContent = `${db.toFixed(0)} dB`;
+  requestAnimationFrame(meter);
+}
+
+// Open the selected microphone and connect it to the engine and to the level meter.
+async function connectMic() {
+  stream?.getTracks().forEach((t) => t.stop());
+  source?.disconnect();
+  const mic = await VS.openMic();
+  stream = mic.stream;
+  if (mic.fallback) log('The selected microphone is not connected. The test uses the default microphone.', '', 'low');
+  source = audio.createMediaStreamSource(stream);
+  source.connect(node);
+  source.connect(analyser);
+  $('#micName').textContent = `Microphone in use: ${stream.getAudioTracks()[0]?.label || 'unknown'}`;
+  VS.fillMics($('#mic'));
+}
+
+async function start() {
+  $('#start').disabled = true;
+  try {
+    if (!window.isSecureContext) throw new Error('This page is not on HTTPS. Open it through the Cloudflare address.');
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('This browser has no microphone access.');
+    audio = new AudioContext();
+    await audio.resume();
+    node = audio.createScriptProcessor(4096, 1, 1);
+    node.onaudioprocess = (e) => {
+      if (!recognizer) return;
+      if (!t0) t0 = Date.now() - e.inputBuffer.duration * 1000;
+      try { recognizer.acceptWaveform(e.inputBuffer); } catch { /* the recognizer changes */ }
+    };
+    node.connect(audio.destination);
+    analyser = audio.createAnalyser();
+    analyser.fftSize = 2048;
+    await connectMic();
+    meter();
+    if (!model) {
+      setState('The speech model loads (37 MB). The first load can take one minute. Keep this page open. The level meter works now.');
+      const started = performance.now();
+      model = await Vosk.createModel(new URL('/vendor/model-en-in.tar.gz', location.href).href);
+      log('The model is ready.', `${((performance.now() - started) / 1000).toFixed(1)} s`, 'no');
+    }
+    newRecognizer();
+    navigator.wakeLock?.request('screen').catch(() => {});
+    running = true;
+    $('#start').textContent = 'The test runs';
+    setState('The engine listens. Say a command from the list, for example "' + (commands.at(-1)?.phrase || 'mark dodge') + '".', 'on');
+  } catch (e) {
+    setState(`The test did not start: ${e.name === 'NotAllowedError' ? 'the browser did not allow the microphone.' : e.message}`, 'bad');
+    $('#start').disabled = false;
+  }
+}
+
+$('#start').addEventListener('click', start);
+$('#conf').addEventListener('change', (e) => { VS.settings.setMinConf(e.target.value); e.target.value = VS.settings.minConf(); });
+$('#fast').addEventListener('change', (e) => VS.settings.setFast(e.target.checked));
+$('#mic').addEventListener('change', async (e) => {
+  VS.settings.setMicId(e.target.value);
+  if (!audio) return;
+  try { await connectMic(); if (recognizer) newRecognizer(); } catch (err) { log(`The microphone did not open: ${err.message}`, '', 'low'); }
+});
+$('#game').addEventListener('change', () => { buildCommands(); if (running) newRecognizer(); });
+navigator.mediaDevices?.addEventListener?.('devicechange', () => VS.fillMics($('#mic')));
+
+$('#conf').value = VS.settings.minConf();
+$('#fast').checked = VS.settings.fast();
+VS.fillMics($('#mic'));
+fetch('/api/state').then((r) => r.json()).then((s) => {
+  games = s.games;
+  const saved = localStorage.getItem('game');
+  $('#game').innerHTML = games.map((g) => `<option value="${esc(g.id)}"${g.id === saved ? ' selected' : ''}>${esc(g.name)}</option>`).join('');
+  buildCommands();
+}).catch((e) => setState(`The page could not get the games: ${e.message}`, 'bad'));
+</script>
+</body>
+</html>

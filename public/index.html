@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#101214">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>Clip Marker</title>
 <style>
   :root {
@@ -67,6 +70,13 @@
   .pad .timer:empty { display: none; }
   .pad.range { grid-column: span 2; border-color: var(--accent); }
   .pad.range.open { border-color: var(--bad); background: #2a1917; }
+  #voice.on { border-color: var(--ok); color: var(--ok); }
+  #voiceLine { font: 13px var(--mono); color: var(--muted); margin: -6px 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #voiceLine:empty { display: none; }
+  #voiceLine b { color: var(--ok); font-weight: 600; }
+  .row select.short, .row input.short { width: 110px; flex: none; }
+  .row select.mic { width: min(260px, 55vw); flex: none; }
+  #micNote:empty { display: none; }
   .pad.add { border-style: dashed; border-bottom-width: 1px; background: none; color: var(--muted); font-size: 16px; align-items: center; justify-content: center; }
   .pad.sent { border-color: var(--ok); background: #16261f; }
   .pad.sent .note { color: var(--ok); }
@@ -107,6 +117,15 @@
   .row label.range input { width: auto; padding: 0; accent-color: var(--accent); }
   .row input.key { width: 48px; flex: none; text-align: center; font-family: var(--mono); text-transform: uppercase; padding: 10px 4px; }
   .gamebox { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+  .gamebox.closed { padding: 0; }
+  .gamehead {
+    display: flex; gap: 10px; align-items: center; width: 100%; background: none; border: 0; padding: 0 0 10px;
+    text-align: left; cursor: pointer; font-weight: 600;
+  }
+  .gamebox.closed .gamehead { padding: 12px; }
+  .gamehead .arrow { color: var(--accent); width: 12px; }
+  .gamehead .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gamehead .count { font: 13px var(--mono); color: var(--muted); font-weight: 400; }
   .x { color: var(--bad); }
   .past { font-size: 14px; }
   .past .row { border-bottom: 1px solid var(--raised); padding-bottom: 8px; }
@@ -115,6 +134,7 @@
 <body>
 <header>
   <h1>Clip<span>/</span>Marker</h1>
+  <button class="btn small" id="voice" aria-pressed="false">Voice: off</button>
   <button class="btn small" id="openSettings">Settings</button>
 </header>
 
@@ -124,6 +144,7 @@
   <button class="btn primary" id="connect">Start</button>
 </div>
 <div class="status" id="status"><span class="dot"></span><span class="title"></span><span class="clock" id="clock"></span></div>
+<div id="voiceLine"></div>
 
 <main id="pads"></main>
 
@@ -154,6 +175,22 @@
     </div>
 
     <div>
+      <h2>Voice commands</h2>
+      <p>Select "Voice" on the main page, then say the first word and the name of a button, for example "mark parry".
+        For a Start/End button, say "start" or "end" and the name. These settings are for this device only.</p>
+      <div class="row"><span class="grow">Microphone</span>
+        <select class="mic" id="voiceMic" aria-label="Microphone"></select></div>
+      <p id="micNote"></p>
+      <div class="row"><span class="grow">First word of a command</span>
+        <select class="short" id="wakeWord"><option>mark</option><option>clip</option><option>save</option></select></div>
+      <div class="row"><span class="grow">Minimum confidence (0.5 to 0.95)</span>
+        <input class="short" id="voiceConf" type="number" min="0.3" max="0.99" step="0.05"></div>
+      <div class="row"><label class="grow" for="voiceFast">Fast detection: act on a command before you stop talking. It helps with game audio. It skips the minimum confidence.</label>
+        <input id="voiceFast" type="checkbox" style="width:auto"></div>
+      <p><a href="/voice-test">Open the voice test</a>. The test saves no markers.</p>
+    </div>
+
+    <div>
       <h2>Marker files of all sessions</h2>
       <div class="past" id="sessions"></div>
     </div>
@@ -173,6 +210,7 @@
   </div>
 </dialog>
 
+<script src="/voice-shared.js"></script>
 <script>
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -226,6 +264,7 @@ function render() {
   $('#links').innerHTML = session ? fileLinks(session.id) : last ? fileLinks(last.id) : '';
   tick();
   renderLog();
+  syncVoice();
 }
 
 // A range button shows "Start" or "End", and the time since the start while the range is open.
@@ -259,7 +298,7 @@ async function load() {
 
 // ---------- Save a marker ----------
 
-async function mark(termId) {
+async function mark(termId, agoMs) {
   const game = currentGame();
   const pad = document.querySelector(`.pad[data-term="${CSS.escape(termId)}"]`);
   if (!game || !pad || pad.dataset.busy) return;
@@ -268,7 +307,7 @@ async function mark(termId) {
   const note = pad.querySelector('.note');
   navigator.vibrate?.(25);
   try {
-    const marker = await api('POST', '/api/mark', { gameId: game.id, termId });
+    const marker = await api('POST', '/api/mark', { gameId: game.id, termId, agoMs });
     pad.classList.add('sent');
     note.textContent = `saved · ${marker.offset}`;
     state.markers.unshift(marker);
@@ -287,7 +326,7 @@ async function mark(termId) {
 $('#pads').addEventListener('click', (e) => {
   const pad = e.target.closest('.pad');
   if (pad?.classList.contains('add')) return openNewButton();
-  if (pad) mark(pad.dataset.term);
+  if (pad) mark(pad.dataset.term, 0);
 });
 
 document.addEventListener('keydown', (e) => {
@@ -337,6 +376,147 @@ $('#connect').addEventListener('click', async () => {
 });
 $('#url').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.target.blur(); $('#connect').click(); } });
 
+// ---------- Voice commands ----------
+// The speech engine (Vosk) runs in this browser. It can hear only the commands of the selected game.
+// voice-shared.js chooses the microphone and finds the commands.
+
+const VS = window.VoiceShared;
+const voice = { on: false, busy: false, model: null, rec: null, audio: null, stream: null, node: null, lock: null, key: null, commands: [], t0: 0 };
+const track = VS.tracker(() => voice.commands);
+
+function voiceLine(html) { $('#voiceLine').innerHTML = html; }
+function paintVoice(text) {
+  $('#voice').textContent = text || (voice.on ? 'Voice: on' : 'Voice: off');
+  $('#voice').classList.toggle('on', voice.on);
+  $('#voice').setAttribute('aria-pressed', String(voice.on));
+}
+
+function beep() {
+  if (!voice.audio) return;
+  const osc = voice.audio.createOscillator(), gain = voice.audio.createGain();
+  osc.frequency.value = 880; gain.gain.value = 0.08;
+  osc.connect(gain).connect(voice.audio.destination);
+  osc.start(); osc.stop(voice.audio.currentTime + 0.09);
+}
+
+// Give the engine the commands of the selected game. Do this again when the game or its buttons change.
+function syncVoice() {
+  if (!voice.on) return;
+  voice.commands = VS.commandsOf(currentGame());
+  const key = voice.commands.map((c) => c.phrase).join('|');
+  if (key === voice.key) return;
+  voice.key = key;
+  voice.rec?.remove();
+  track.reset();
+  voice.rec = new voice.model.KaldiRecognizer(voice.audio.sampleRate, JSON.stringify([...new Set(voice.commands.map((c) => c.phrase)), '[unk]']));
+  voice.rec.setWords(true);
+  voice.rec.on('partialresult', (m) => act(track.partial((m.result.partial || '').trim())));
+  voice.rec.on('result', (m) => act(track.final((m.result.text || '').trim(), m.result.result || [], voice.t0)));
+  voice.t0 = 0; // the clock of the new recognizer starts at its first block of audio
+  const example = voice.commands.at(-1)?.phrase;
+  voiceLine(example ? `Voice is on. Say for example "${esc(example)}".` : 'Voice is on, but this game has no buttons.');
+}
+
+// The marker gets the time of the first word of the command, not the time of the result.
+function act(hits) {
+  if (!voice.on) return;
+  for (const h of hits) {
+    if (h.low) voiceLine(`Ignored "${esc(h.cmd.phrase)}" (confidence ${h.conf.toFixed(2)}).`);
+    else voiceCommand(h.cmd, h.agoMs);
+  }
+}
+
+function voiceCommand(hit, agoMs) {
+  if ($('#settings').open || $('#newButton').open) return;
+  if (!state.session) return voiceLine(`Heard "${esc(hit.phrase)}", but there is no session. Select Start first.`);
+  const open = Boolean(state.open?.[hit.termId]);
+  if (hit.verb === 'start' && open) return voiceLine(`Heard "${esc(hit.phrase)}", but ${esc(hit.label)} is open already.`);
+  if (hit.verb === 'end' && !open) return voiceLine(`Heard "${esc(hit.phrase)}", but ${esc(hit.label)} is not open.`);
+  voiceLine(`Heard <b>"${esc(hit.phrase)}"</b> at ${new Date().toLocaleTimeString([], { hour12: false })}.`);
+  beep();
+  mark(hit.termId, agoMs);
+}
+
+const loadScript = (src) => new Promise((ok, fail) => {
+  const el = document.createElement('script');
+  el.src = src; el.onload = ok; el.onerror = () => fail(new Error('The speech engine did not load.'));
+  document.head.append(el);
+});
+
+async function startVoice() {
+  if (!window.isSecureContext) throw new Error('Voice needs HTTPS. Open the app through the Cloudflare address.');
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error('This browser has no microphone access.');
+  const mic = await VS.openMic();
+  voice.stream = mic.stream;
+  if (mic.fallback) toast('The selected microphone is not connected. Voice uses the default microphone.', false, 6000);
+  voice.audio = new AudioContext();
+  await voice.audio.resume();
+  if (!voice.model) {
+    paintVoice('Voice: loading…');
+    voiceLine('The speech model loads (37 MB). The first load can take one minute.');
+    if (!window.Vosk) await loadScript('/vendor/vosk.js');
+    voice.model = await Vosk.createModel(new URL('/vendor/model-en-in.tar.gz', location.href).href);
+  }
+  voice.node = voice.audio.createScriptProcessor(4096, 1, 1);
+  voice.node.onaudioprocess = (e) => {
+    if (!voice.rec) return;
+    if (!voice.t0) voice.t0 = Date.now() - e.inputBuffer.duration * 1000;
+    try { voice.rec.acceptWaveform(e.inputBuffer); } catch { /* the recognizer changes */ }
+  };
+  voice.audio.createMediaStreamSource(voice.stream).connect(voice.node);
+  voice.node.connect(voice.audio.destination);
+  voice.on = true;
+  voice.key = null;
+  keepAwake();
+  syncVoice();
+  const name = voice.stream.getAudioTracks()[0]?.label;
+  if (name) voiceLine(`${$('#voiceLine').innerHTML} Microphone: ${esc(name)}.`);
+}
+
+function stopVoice() {
+  voice.on = false;
+  voice.stream?.getTracks().forEach((t) => t.stop());
+  voice.node?.disconnect();
+  voice.rec?.remove();
+  voice.audio?.close();
+  voice.lock?.release().catch(() => {});
+  Object.assign(voice, { stream: null, node: null, rec: null, audio: null, lock: null, key: null });
+  track.reset();
+  voiceLine('');
+}
+
+// A phone stops the microphone when the screen goes off. Keep the screen on while Voice is on.
+async function keepAwake() {
+  if (!voice.on || document.hidden) return;
+  try { voice.lock = await navigator.wakeLock?.request('screen'); } catch { /* the device does not allow it */ }
+}
+document.addEventListener('visibilitychange', keepAwake);
+
+async function toggleVoice(on) {
+  if (voice.busy) return;
+  voice.busy = true;
+  try {
+    if (voice.on) stopVoice();
+    if (on) await startVoice();
+  } catch (e) {
+    stopVoice();
+    toast(e.name === 'NotAllowedError' ? 'The browser did not allow the microphone.' : e.message, false, 6000);
+  }
+  voice.busy = false;
+  paintVoice();
+}
+
+$('#voice').addEventListener('click', async () => { await toggleVoice(!voice.on); $('#voice').blur(); });
+
+$('#wakeWord').addEventListener('change', (e) => { localStorage.setItem('wakeWord', e.target.value); syncVoice(); });
+$('#voiceConf').addEventListener('change', (e) => { VS.settings.setMinConf(e.target.value); e.target.value = VS.settings.minConf(); });
+$('#voiceFast').addEventListener('change', (e) => VS.settings.setFast(e.target.checked));
+$('#voiceMic').addEventListener('change', async (e) => {
+  VS.settings.setMicId(e.target.value);
+  if (voice.on) await toggleVoice(true); // open the new microphone now
+});
+navigator.mediaDevices?.addEventListener?.('devicechange', () => { if ($('#settings').open) VS.fillMics($('#voiceMic')); });
+
 // ---------- Add a button from the main page ----------
 
 function openNewButton() {
@@ -376,9 +556,19 @@ $('#newButton').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.
 
 // ---------- Settings ----------
 
+// Each game shows only its name. Select the name to show its buttons and to change them.
+const openGames = new Set();
+
 function renderGames() {
-  $('#games').innerHTML = draftGames.map((g, gi) => `
+  $('#games').innerHTML = draftGames.map((g, gi) => {
+    const open = openGames.has(g.id);
+    const head = `<button class="gamehead" data-togglegame="${esc(g.id)}" aria-expanded="${open}">
+        <span class="arrow">${open ? '▾' : '▸'}</span><span class="grow">${esc(g.name || 'New game')}</span>
+        <span class="count">${g.terms.length} button${g.terms.length === 1 ? '' : 's'}</span></button>`;
+    if (!open) return `<div class="gamebox closed">${head}</div>`;
+    return `
     <div class="gamebox">
+      ${head}
       <div class="row">
         <input class="grow" data-g="${gi}" data-f="name" value="${esc(g.name)}" placeholder="Name of the game" maxlength="40">
         <button class="btn small ghost x" data-delgame="${gi}">Delete game</button>
@@ -391,7 +581,8 @@ function renderGames() {
           <button class="btn small ghost x" data-delterm="${gi},${ti}" aria-label="Delete button">✕</button>
         </div>`).join('')}
       <button class="btn small" data-addterm="${gi}">Add a button</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function renderSessions() {
@@ -405,8 +596,15 @@ function renderSessions() {
 $('#openSettings').addEventListener('click', async () => {
   await load().catch(() => {});
   draftGames = structuredClone(state.games);
+  openGames.clear();
   renderGames();
   renderSessions();
+  $('#wakeWord').value = VS.settings.wakeWord();
+  $('#voiceConf').value = VS.settings.minConf();
+  $('#voiceFast').checked = VS.settings.fast();
+  VS.fillMics($('#voiceMic')).then((named) => {
+    $('#micNote').textContent = named ? '' : 'Select Voice one time and allow the microphone. Then the names of the microphones show here.';
+  });
   $('#settings').showModal();
 });
 $('#closeSettings').addEventListener('click', () => $('#settings').close());
@@ -419,6 +617,12 @@ $('#games').addEventListener('input', (e) => {
   else draftGames[g].terms[t][f] = f === 'key' ? e.target.value.toLowerCase() : e.target.value;
 });
 $('#games').addEventListener('click', (e) => {
+  const head = e.target.closest('[data-togglegame]');
+  if (head) {
+    const id = head.dataset.togglegame;
+    if (!openGames.delete(id)) openGames.add(id);
+    return renderGames();
+  }
   const d = e.target.dataset;
   if (d.addterm !== undefined) draftGames[d.addterm].terms.push({ id: newId(), label: '', key: '' });
   else if (d.delterm !== undefined) { const [g, t] = d.delterm.split(','); draftGames[g].terms.splice(t, 1); }
@@ -427,14 +631,20 @@ $('#games').addEventListener('click', (e) => {
   renderGames();
 });
 $('#addGame').addEventListener('click', () => {
-  draftGames.push({ id: newId(), name: '', terms: [{ id: newId(), label: '', key: '' }] });
+  const game = { id: newId(), name: '', terms: [{ id: newId(), label: '', key: '' }] };
+  draftGames.push(game);
+  openGames.add(game.id);
   renderGames();
 });
 $('#saveGames').addEventListener('click', async () => {
   for (const g of draftGames) {
     const keys = g.terms.map((t) => t.key).filter(Boolean);
     const twice = keys.find((k, i) => keys.indexOf(k) !== i);
-    if (twice) return toast(`The key "${twice.toUpperCase()}" is used two times in ${g.name || 'a game'}.`);
+    if (twice) {
+      openGames.add(g.id); // show the game that has the problem
+      renderGames();
+      return toast(`The key "${twice.toUpperCase()}" is used two times in ${g.name || 'a game'}.`);
+    }
   }
   try {
     await api('PUT', '/api/games', { games: draftGames });
