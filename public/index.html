@@ -93,6 +93,7 @@
   .log li { display: grid; grid-template-columns: 70px 1fr auto; gap: 10px; align-items: center; padding: 3px 0; border-bottom: 1px solid var(--raised); }
   .log time { font-family: var(--mono); color: var(--accent); }
   .log .game { color: var(--muted); }
+  .log .acts { display: flex; gap: 4px; }
 
   #toast {
     position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
@@ -210,6 +211,25 @@
   </div>
 </dialog>
 
+<dialog id="editMarker">
+  <div class="sheet" style="gap:12px">
+    <div class="top"><strong id="editTitle">Edit the marker</strong><button class="btn small" id="editCancel">Cancel</button></div>
+    <p id="editNote"></p>
+    <div class="row">
+      <span class="grow">Category</span>
+      <input class="mic" id="editCategory" list="editCategories" maxlength="60" aria-label="Category">
+      <datalist id="editCategories"></datalist>
+    </div>
+    <div class="row">
+      <span class="grow">Time into the stream (h:mm:ss)</span>
+      <button class="btn small" data-shift="-5">−5 s</button>
+      <input class="short" id="editOffset" inputmode="numeric" autocomplete="off" aria-label="Time into the stream">
+      <button class="btn small" data-shift="5">+5 s</button>
+    </div>
+    <div class="row"><span class="grow"></span><button class="btn primary" id="editSave">Save the marker</button></div>
+  </div>
+</dialog>
+
 <script src="/voice-shared.js"></script>
 <script>
 const $ = (sel) => document.querySelector(sel);
@@ -287,7 +307,7 @@ setInterval(tick, 1000);
 
 function renderLog() {
   $('#log').innerHTML = state.markers.map((m) =>
-    `<li><time>${esc(m.offset)}</time><span>${esc(m.category)}${m.kind ? ` <strong>${m.kind}</strong>` : ''} <span class="game">· ${esc(m.game)}${m.kind === 'end' ? ` · ${clockText(m.durationSec || 0)} long` : ''}</span></span><button class="btn small ghost x" data-del="${esc(m.id)}" aria-label="Delete marker">✕</button></li>`).join('')
+    `<li><time>${esc(m.offset)}</time><span>${esc(m.category)}${m.kind ? ` <strong>${m.kind}</strong>` : ''} <span class="game">· ${esc(m.game)}${m.kind === 'end' ? ` · ${clockText(m.durationSec || 0)} long` : ''}</span></span><span class="acts"><button class="btn small ghost" data-edit="${esc(m.id)}" aria-label="Edit marker">Edit</button><button class="btn small ghost x" data-del="${esc(m.id)}" aria-label="Delete marker">✕</button></span></li>`).join('')
     || `<li><span></span><span style="color:var(--muted)">${state.session ? 'No markers yet.' : state.sessions[0] ? `${state.sessions[0].count} markers. Download the file with the links above.` : 'No markers yet.'}</span><span></span></li>`;
 }
 
@@ -342,6 +362,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 $('#log').addEventListener('click', async (e) => {
+  if (e.target.dataset.edit) return openEditMarker(e.target.dataset.edit);
   const id = e.target.dataset.del;
   if (!id) return;
   try {
@@ -553,6 +574,53 @@ async function saveNewButton() {
 $('#newCancel').addEventListener('click', () => $('#newButton').close());
 $('#newSave').addEventListener('click', saveNewButton);
 $('#newButton').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('#newLabel, #newKey')) { e.preventDefault(); saveNewButton(); } });
+
+// ---------- Edit a marker ----------
+
+let editId = null;
+const parseClock = (text) => {
+  const parts = String(text).trim().split(':');
+  if (parts.length > 3 || parts.some((p) => !/^\d+$/.test(p))) return null;
+  return parts.reduce((total, p) => total * 60 + Number(p), 0);
+};
+
+function openEditMarker(id) {
+  const m = state.markers.find((x) => x.id === id);
+  if (!m) return;
+  editId = id;
+  const game = state.games.find((g) => g.name === m.game);
+  $('#editTitle').textContent = `Edit the marker${m.kind ? ` (${m.kind})` : ''}`;
+  $('#editNote').textContent = m.kind
+    ? 'A new category changes the start and the end marker of this range. The time changes only this marker.'
+    : `Saved at ${m.offset} for ${m.game}.`;
+  $('#editCategories').innerHTML = (game?.terms || []).map((t) => `<option value="${esc(t.label)}">`).join('');
+  $('#editCategory').value = m.category;
+  $('#editOffset').value = m.offset;
+  $('#editMarker').showModal();
+  $('#editOffset').focus();
+}
+
+async function saveEditMarker() {
+  const category = $('#editCategory').value.trim();
+  if (!category) return toast('Type a category.');
+  if (parseClock($('#editOffset').value) === null) return toast('Type the time as h:mm:ss, for example 1:02:03.');
+  try {
+    await api('PATCH', '/api/mark', { id: editId, category, offset: $('#editOffset').value.trim() });
+    $('#editMarker').close();
+    await load();
+    toast('The marker is saved.', true);
+  } catch (e) { toast(e.message); }
+}
+
+$('#editMarker').addEventListener('click', (e) => {
+  const shift = Number(e.target.dataset.shift);
+  if (!shift) return;
+  const sec = parseClock($('#editOffset').value);
+  if (sec !== null) $('#editOffset').value = clockText(Math.max(0, sec + shift));
+});
+$('#editCancel').addEventListener('click', () => $('#editMarker').close());
+$('#editSave').addEventListener('click', saveEditMarker);
+$('#editMarker').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); saveEditMarker(); } });
 
 // ---------- Settings ----------
 

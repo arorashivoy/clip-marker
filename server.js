@@ -199,6 +199,41 @@ function removeMarker(markerId) {
   return {};
 }
 
+// "1:02:03", "62:03" or "3723" -> 3723 seconds. Null if the text is not a time.
+function parseOffset(value) {
+  if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+  const parts = String(value ?? '').trim().split(':');
+  if (!parts.length || parts.length > 3 || parts.some((p) => !/^\d+$/.test(p))) return null;
+  return parts.reduce((total, p) => total * 60 + Number(p), 0);
+}
+
+// Change the category or the time of a marker. The time of day (`at`) moves by the same amount.
+// The category of a range is on its start and its end marker, so a change to one changes the two.
+function editMarker(markerId, changes) {
+  const all = readMarkers();
+  const target = all.find((m) => m.id === markerId);
+  if (!target) throw new HttpError(404, 'This marker does not exist.');
+  const category = changes.category === undefined ? target.category : String(changes.category).trim().slice(0, 60);
+  if (!category) throw new HttpError(400, 'Type a category.');
+  const offsetSec = changes.offset === undefined ? target.offsetSec : parseOffset(changes.offset);
+  if (offsetSec === null) throw new HttpError(400, 'Type the time as h:mm:ss, for example 1:02:03.');
+
+  const shift = offsetSec - target.offsetSec;
+  target.offsetSec = offsetSec;
+  target.offset = formatOffset(offsetSec);
+  target.at = new Date(Date.parse(target.at) + shift * 1000).toISOString();
+  const group = target.kind ? all.filter((m) => m.rangeId === target.rangeId) : [target];
+  for (const m of group) m.category = category;
+
+  const start = group.find((m) => m.kind === 'start'), end = group.find((m) => m.kind === 'end');
+  if (start && end) {
+    if (end.offsetSec < start.offsetSec) throw new HttpError(400, `The end must be at ${start.offset} or later.`);
+    end.durationSec = end.offsetSec - start.offsetSec;
+  }
+  writeMarkers(all);
+  return target;
+}
+
 function listSessions() {
   const sessions = new Map();
   for (const m of readMarkers()) {
@@ -295,6 +330,7 @@ async function route(req, url) {
   if (key === 'GET /api/state') return publicState();
   if (key === 'POST /api/mark') { const b = await readJson(req); return mark(b.gameId, b.termId, b.agoMs); }
   if (key === 'DELETE /api/mark') return removeMarker(url.searchParams.get('id'));
+  if (key === 'PATCH /api/mark') { const b = await readJson(req); return editMarker(b.id, b); }
   if (key === 'POST /api/session') return startSession((await readJson(req)).url);
   if (key === 'DELETE /api/session') return stopSession();
   if (key === 'PUT /api/games') { cfg.games = cleanGames((await readJson(req)).games); save(); return { games: cfg.games }; }

@@ -25,6 +25,8 @@ no Google account. A different tool can read the marker file later and cut the c
 3. Press a button on the screen, or press the key that the button shows.
 4. To add a button to the game, select "+ Add a button" after the last button. Give the name and the key.
 5. If a press was a mistake, delete the marker in the list.
+   To change the category or the time of a marker, select Edit in the list.
+   The −5 s and +5 s buttons move the time. A new category for a range changes its start and its end marker.
 6. To change the buttons of a game, open Settings and select the name of the game. Its buttons open below it.
 7. Select Stop when the stream ends. Then download the marker file with the JSON or CSV link.
 
